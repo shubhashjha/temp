@@ -61,15 +61,29 @@ public class AesGcmDecryptionService
         }
     }
 
-    private static string DecryptAesGcm(byte[] data, byte[] key, byte[] iv)
+   private static string DecryptAesGcm(byte[] encryptedDataWithTag, byte[] key, byte[] iv)
+{
+    // Separate the encrypted data and the tag (last 16 bytes are usually the tag)
+    int tagLength = 16;
+    int encryptedDataLength = encryptedDataWithTag.Length - tagLength;
+
+    // Extract encrypted data and tag
+    byte[] encryptedData = new byte[encryptedDataLength];
+    byte[] tag = new byte[tagLength];
+
+    Array.Copy(encryptedDataWithTag, 0, encryptedData, 0, encryptedDataLength);
+    Array.Copy(encryptedDataWithTag, encryptedDataLength, tag, 0, tagLength);
+
+    // Perform decryption
+    byte[] decryptedData = new byte[encryptedData.Length];
+    using (var aesGcm = new AesGcm(key))
     {
-        byte[] decryptedData = new byte[data.Length];
-        using (var aesGcm = new AesGcm(key))
-        {
-            aesGcm.Decrypt(iv, data, null, decryptedData);
-        }
-        return Encoding.UTF8.GetString(decryptedData);
+        aesGcm.Decrypt(iv, encryptedData, tag, decryptedData);
     }
+
+    return Encoding.UTF8.GetString(decryptedData);
+}
+
 
     private static byte[] ConvertHexToBytes(string hex)
     {
