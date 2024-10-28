@@ -1,0 +1,66 @@
+using System;
+using System.Security.Cryptography;
+using System.Text;
+
+public class AesGcmDecryption
+{
+    public static string Decrypt(string keyStr, string input, string saltStr, int iterations, bool isHexFormat)
+    {
+        // Convert key, salt, and input to byte arrays
+        byte[] salt = Encoding.UTF8.GetBytes(saltStr);
+        byte[] keyBytes = new Rfc2898DeriveBytes(keyStr, salt, iterations, HashAlgorithmName.SHA256).GetBytes(32);
+
+        // Convert input string to byte array
+        byte[] encryptedArray;
+        if (isHexFormat)
+        {
+            encryptedArray = ConvertHexToBytes(input);
+        }
+        else
+        {
+            encryptedArray = Convert.FromBase64String(input);
+        }
+
+        if (encryptedArray.Length < 28)
+        {
+            throw new ArgumentException("Invalid input data length.");
+        }
+
+        // Extract IV (first 12 bytes) and encrypted data (remaining bytes)
+        byte[] iv = new byte[12];
+        Array.Copy(encryptedArray, 0, iv, 0, iv.Length);
+
+        byte[] encryptedData = new byte[encryptedArray.Length - iv.Length];
+        Array.Copy(encryptedArray, iv.Length, encryptedData, 0, encryptedData.Length);
+
+        // Decrypt the data
+        try
+        {
+            return DecryptAesGcm(encryptedData, keyBytes, iv);
+        }
+        catch (CryptographicException)
+        {
+            throw new Exception("Error: Invalid decryption key or tampered data.");
+        }
+    }
+
+    private static string DecryptAesGcm(byte[] data, byte[] key, byte[] iv)
+    {
+        byte[] decryptedData = new byte[data.Length];
+        using (var aesGcm = new AesGcm(key))
+        {
+            aesGcm.Decrypt(iv, data, decryptedData);
+        }
+        return Encoding.UTF8.GetString(decryptedData);
+    }
+
+    private static byte[] ConvertHexToBytes(string hex)
+    {
+        byte[] bytes = new byte[hex.Length / 2];
+        for (int i = 0; i < hex.Length; i += 2)
+        {
+            bytes[i / 2] = Convert.ToByte(hex.Substring(i, 2), 16);
+        }
+        return bytes;
+    }
+}
