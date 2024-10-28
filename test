@@ -1,97 +1,41 @@
-using System;
-using System.Security.Cryptography;
-using System.Text;
 
-public class AesGcmDecryptionService
+public class AesGcmDecryptor
 {
-    public static string Decrypt(string keyStr, string input, string saltStr, int iterations, string format)
+    private readonly byte[] key;
+    private readonly byte[] salt;
+    private readonly int iterations;
+
+    public AesGcmDecryptor(byte[] key, byte[] salt, int iterations)
     {
-        // Validate inputs
-        if (string.IsNullOrEmpty(keyStr) || string.IsNullOrEmpty(input) || string.IsNullOrEmpty(saltStr))
-        {
-            throw new ArgumentException("Key, input, and salt cannot be empty.");
-        }
-
-        if (saltStr.Length != 12)
-        {
-            throw new ArgumentException("Salt must be exactly 12 characters long.");
-        }
-
-        if (iterations < 1000)
-        {
-            throw new ArgumentException("Iterations must be at least 1000.");
-        }
-
-        // Convert key and salt to bytes and derive the AES key
-        byte[] salt = Encoding.UTF8.GetBytes(saltStr);
-        byte[] keyBytes = DeriveKey(keyStr, salt, iterations);
-
-        // Convert the input to a byte array based on the selected format (hex or base64)
-        byte[] encryptedArray = format.ToLower() == "hex" ? ConvertHexToBytes(input) : Convert.FromBase64String(input);
-
-        // Ensure data length is sufficient (12 bytes IV + encrypted data)
-        if (encryptedArray.Length < 28)
-        {
-            throw new ArgumentException("Invalid input data length.");
-        }
-
-        // Extract IV (first 12 bytes), encrypted data, and authentication tag
-        byte[] iv = new byte[12];
-        Array.Copy(encryptedArray, 0, iv, 0, iv.Length);
-
-        byte[] encryptedData = new byte[encryptedArray.Length - iv.Length];
-        Array.Copy(encryptedArray, iv.Length, encryptedData, 0, encryptedData.Length);
-
-        // Perform AES-GCM decryption
-        try
-        {
-            return DecryptAesGcm(encryptedData, keyBytes, iv);
-        }
-        catch (CryptographicException)
-        {
-            throw new Exception("Error: Invalid decryption key or tampered data.");
-        }
+        this.key = key;
+        this.salt = salt;
+        this.iterations = iterations;
     }
 
-    private static byte[] DeriveKey(string password, byte[] salt, int iterations)
+    public string Decrypt(string encryptedHex)
     {
-        using (var pbkdf2 = new Rfc2898DeriveBytes(password, salt, iterations, HashAlgorithmName.SHA256))
-        {
-            return pbkdf2.GetBytes(32); // AES-256 key
-        }
+        // Convert hexadecimal string to byte array
+        var encryptedBytes = Convert.FromHexString(encryptedHex);
+
+        // Extract IV (first 12 bytes)
+        var iv = new byte[12];
+        Array.Copy(encryptedBytes, iv, 12);
+
+        // Extract encrypted data (remaining bytes)
+        var encryptedData = new byte[encryptedBytes.Length - 12];
+        Array.Copy(encryptedBytes, 12, encryptedData, 0, encryptedBytes.Length - 12);
+
+        // Derive key using PBKDF2
+        var derivedKey = new Rfc2898DeriveBytes(key, salt, iterations).GetBytes(32);
+
+        // Create AesGcm instance
+        using var aesGcm = new AesGcm(derivedKey);
+
+        // Decrypt data
+        var decryptedBytes = aesGcm.Decrypt(iv, encryptedData, null);
+
+        // Convert decrypted bytes to string
+        return Encoding.UTF8.GetString(decryptedBytes);
     }
-
-   private static string DecryptAesGcm(byte[] encryptedDataWithTag, byte[] key, byte[] iv)
-{
-    // Separate the encrypted data and the tag (last 16 bytes are usually the tag)
-    int tagLength = 16;
-    int encryptedDataLength = encryptedDataWithTag.Length - tagLength;
-
-    // Extract encrypted data and tag
-    byte[] encryptedData = new byte[encryptedDataLength];
-    byte[] tag = new byte[tagLength];
-
-    Array.Copy(encryptedDataWithTag, 0, encryptedData, 0, encryptedDataLength);
-    Array.Copy(encryptedDataWithTag, encryptedDataLength, tag, 0, tagLength);
-
-    // Perform decryption
-    byte[] decryptedData = new byte[encryptedData.Length];
-    using (var aesGcm = new AesGcm(key))
-    {
-        aesGcm.Decrypt(iv, encryptedData, tag, decryptedData);
-    }
-
-    return Encoding.UTF8.GetString(decryptedData);
 }
 
-
-    private static byte[] ConvertHexToBytes(string hex)
-    {
-        byte[] bytes = new byte[hex.Length / 2];
-        for (int i = 0; i < hex.Length; i += 2)
-        {
-            bytes[i / 2] = Convert.ToByte(hex.Substring(i, 2), 16);
-        }
-        return bytes;
-    }
-}
