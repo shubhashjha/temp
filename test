@@ -1,41 +1,51 @@
+using System;
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
+using Microsoft.IdentityModel.Tokens;
+using System.Text;
 
-public class AesGcmDecryptor
+public class JwtTokenVerifier
 {
-    private readonly byte[] key;
-    private readonly byte[] salt;
-    private readonly int iterations;
+    private const string SecretKey = "YourSuperSecureSecretKey123!"; // Must match the key used to sign the token
+    private const string ValidIssuer = "YourIssuer";
+    private const string ValidAudience = "YourAudience";
 
-    public AesGcmDecryptor(byte[] key, byte[] salt, int iterations)
+    public ClaimsPrincipal ValidateJwtToken(string token)
     {
-        this.key = key;
-        this.salt = salt;
-        this.iterations = iterations;
-    }
+        try
+        {
+            // Define the token validation parameters
+            var tokenValidationParameters = new TokenValidationParameters
+            {
+                ValidateIssuer = true,
+                ValidIssuer = ValidIssuer, // Match issuer
 
-    public string Decrypt(string encryptedHex)
-    {
-        // Convert hexadecimal string to byte array
-        var encryptedBytes = Convert.FromHexString(encryptedHex);
+                ValidateAudience = true,
+                ValidAudience = ValidAudience, // Match audience
 
-        // Extract IV (first 12 bytes)
-        var iv = new byte[12];
-        Array.Copy(encryptedBytes, iv, 12);
+                ValidateIssuerSigningKey = true,
+                IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(SecretKey)),
 
-        // Extract encrypted data (remaining bytes)
-        var encryptedData = new byte[encryptedBytes.Length - 12];
-        Array.Copy(encryptedBytes, 12, encryptedData, 0, encryptedBytes.Length - 12);
+                ValidateLifetime = true, // Ensure the token hasn't expired
+                ClockSkew = TimeSpan.Zero // Optional: Set clock skew to zero for strict expiration
+            };
 
-        // Derive key using PBKDF2
-        var derivedKey = new Rfc2898DeriveBytes(key, salt, iterations).GetBytes(32);
+            // Validate the token
+            var tokenHandler = new JwtSecurityTokenHandler();
+            ClaimsPrincipal principal = tokenHandler.ValidateToken(token, tokenValidationParameters, out SecurityToken validatedToken);
 
-        // Create AesGcm instance
-        using var aesGcm = new AesGcm(derivedKey);
-
-        // Decrypt data
-        var decryptedBytes = aesGcm.Decrypt(iv, encryptedData, null);
-
-        // Convert decrypted bytes to string
-        return Encoding.UTF8.GetString(decryptedBytes);
+            // Additional checks can be added here (e.g., verifying custom claims)
+            return principal;
+        }
+        catch (SecurityTokenException ex)
+        {
+            Console.WriteLine($"Token validation failed: {ex.Message}");
+            return null; // Token is invalid
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Unexpected error: {ex.Message}");
+            return null;
+        }
     }
 }
-
