@@ -1,51 +1,19 @@
-using System;
-using System.IdentityModel.Tokens.Jwt;
-using System.Security.Claims;
-using Microsoft.IdentityModel.Tokens;
-using System.Text;
+ WebApplication.CreateBuilder(args);
 
-public class JwtTokenVerifier
+builder.Services.AddControllers();
+
+// Configure Rate Limiting
+builder.Services.AddRateLimiter(options =>
 {
-    private const string SecretKey = "YourSuperSecureSecretKey123!"; // Must match the key used to sign the token
-    private const string ValidIssuer = "YourIssuer";
-    private const string ValidAudience = "YourAudience";
-
-    public ClaimsPrincipal ValidateJwtToken(string token)
-    {
-        try
-        {
-            // Define the token validation parameters
-            var tokenValidationParameters = new TokenValidationParameters
+    options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            context.Connection.RemoteIpAddress?.ToString() ?? "anonymous",
+            () => new FixedWindowRateLimiterOptions
             {
-                ValidateIssuer = true,
-                ValidIssuer = ValidIssuer, // Match issuer
+                PermitLimit = 5, // Allow max 5 requests
+                Window = TimeSpan.FromSeconds(10), // Per 10 seconds
+                QueueLimit = 0 // No queueing
+            }));
 
-                ValidateAudience = true,
-                ValidAudience = ValidAudience, // Match audience
-
-                ValidateIssuerSigningKey = true,
-                IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(SecretKey)),
-
-                ValidateLifetime = true, // Ensure the token hasn't expired
-                ClockSkew = TimeSpan.Zero // Optional: Set clock skew to zero for strict expiration
-            };
-
-            // Validate the token
-            var tokenHandler = new JwtSecurityTokenHandler();
-            ClaimsPrincipal principal = tokenHandler.ValidateToken(token, tokenValidationParameters, out SecurityToken validatedToken);
-
-            // Additional checks can be added here (e.g., verifying custom claims)
-            return principal;
-        }
-        catch (SecurityTokenException ex)
-        {
-            Console.WriteLine($"Token validation failed: {ex.Message}");
-            return null; // Token is invalid
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Unexpected error: {ex.Message}");
-            return null;
-        }
-    }
-}
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+});
